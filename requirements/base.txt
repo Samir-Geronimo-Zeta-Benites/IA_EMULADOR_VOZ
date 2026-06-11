@@ -1,0 +1,15 @@
+numpy>=1.24.0
+scipy>=1.10.0
+sounddevice>=0.4.6
+soundfile>=0.12.1
+librosa>=0.10.0
+praat-parselmouth>=0.4.3
+requests>=2.31.0
+PyQt6>=6.5.0
+silero-vad>=5.1
+transformers>=4.36.0
+torch>=2.0.0
+torchaudio>=2.0.0
+huggingface-hub>=0.20.0
+protobuf>=3.20.0
+sentencepiece>=0.1.99

@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+models/base/
+models/trained/dataset*/
+models/trained/checkpoint_*
+models/trained/target.pth
+models/trained/voz_*.pth
+models/profiles/
+voces_audios_crudos/
+*.onnx
+*.pth
+.DS_Store
