@@ -1,4 +1,4 @@
-﻿import math,pdb,os
+import math,pdb,os
 from time import time as ttime
 import torch
 from torch import nn
@@ -12,7 +12,17 @@ import numpy as np
 from . import commons
 class TextEncoder256(nn.Module):
     def __init__(
-        self,        out_channels,        hidden_channels,        filter_channels,        n_heads,        n_layers,        kernel_size,        p_dropout,        f0=True    ):
+        self,
+        out_channels,
+        hidden_channels,
+        filter_channels,
+        n_heads,
+        n_layers,
+        kernel_size,
+        p_dropout,
+        f0=True,
+        in_dim=256,
+    ):
         super().__init__()
         self.out_channels = out_channels
         self.hidden_channels = hidden_channels
@@ -21,7 +31,7 @@ class TextEncoder256(nn.Module):
         self.n_layers = n_layers
         self.kernel_size = kernel_size
         self.p_dropout = p_dropout
-        self.emb_phone = nn.Linear(256, hidden_channels)
+        self.emb_phone = nn.Linear(in_dim, hidden_channels)
         self.lrelu=nn.LeakyReLU(0.1,inplace=True)
         if(f0==True):
             self.emb_pitch = nn.Embedding(256, hidden_channels)  # pitch 256
@@ -92,8 +102,7 @@ class ResidualCouplingBlock(nn.Module):
         dilation_rate,
         n_layers,
         n_flows=4,
-        gin_channels=0,
-    ):
+        gin_channels=0,    ):
         super().__init__()
         self.channels = channels
         self.hidden_channels = hidden_channels
@@ -112,7 +121,7 @@ class ResidualCouplingBlock(nn.Module):
                     kernel_size,
                     dilation_rate,
                     n_layers,
-                    gin_channels=gin_channels,
+                    gin_channels=0,
                     mean_only=True,
                 )
             )
@@ -156,7 +165,7 @@ class PosteriorEncoder(nn.Module):
             kernel_size,
             dilation_rate,
             n_layers,
-            gin_channels=gin_channels,
+            gin_channels=0,
         )
         self.proj = nn.Conv1d(hidden_channels, out_channels * 2, 1)
 
@@ -294,11 +303,11 @@ class SineGen(torch.nn.Module):
             # fundamental component
             f0_buf[:, :, 0] = f0[:, :, 0]
             for idx in np.arange(self.harmonic_num):f0_buf[:, :, idx + 1] = f0_buf[:, :, 0] * (idx + 2)# idx + 2: the (idx+1)-th overtone, (idx+2)-th harmonic
-            rad_values = (f0_buf / self.sampling_rate) % 1###%1意味着n_har的乘积无法后处理优化
+            rad_values = (f0_buf / self.sampling_rate) % 1###%1???n_har??????????
             rand_ini = torch.rand(f0_buf.shape[0], f0_buf.shape[2], device=f0_buf.device)
             rand_ini[:, 0] = 0
             rad_values[:, 0, :] = rad_values[:, 0, :] + rand_ini
-            tmp_over_one = torch.cumsum(rad_values, 1)# % 1  #####%1意味着后面的cumsum无法再优化
+            tmp_over_one = torch.cumsum(rad_values, 1)# % 1  #####%1??????cumsum?????
             tmp_over_one*=upp
             tmp_over_one=F.interpolate(tmp_over_one.transpose(2, 1), scale_factor=upp, mode='linear', align_corners=True).transpose(2, 1)
             rad_values=F.interpolate(rad_values.transpose(2, 1), scale_factor=upp, mode='nearest').transpose(2, 1)#######
@@ -473,6 +482,7 @@ class SynthesizerTrnMs256NSF(nn.Module):
         spk_embed_dim,
         gin_channels=0,
         sr=40000,
+        phone_dim=768,
         **kwargs
     ):
 
@@ -502,6 +512,7 @@ class SynthesizerTrnMs256NSF(nn.Module):
             n_layers,
             kernel_size,
             p_dropout,
+            in_dim=phone_dim,
         )
         self.dec = GeneratorNSF(
             inter_channels,
@@ -511,7 +522,7 @@ class SynthesizerTrnMs256NSF(nn.Module):
             upsample_rates,
             upsample_initial_channel,
             upsample_kernel_sizes,
-            gin_channels=0,
+            gin_channels=gin_channels,
             sr=sr,
             is_half=kwargs["is_half"]
         )
@@ -522,12 +533,12 @@ class SynthesizerTrnMs256NSF(nn.Module):
             5,
             1,
             16,
-            gin_channels=gin_channels,
+            gin_channels=0,
         )
         self.flow = ResidualCouplingBlock(
             inter_channels, hidden_channels, 5, 1, 3, gin_channels=gin_channels
         )
-        self.emb_g = nn.Linear(self.spk_embed_dim, gin_channels)
+        self.emb_g = nn.Embedding(self.spk_embed_dim, gin_channels)
 
     def remove_weight_norm(self):
         self.dec.remove_weight_norm()
@@ -607,7 +618,7 @@ class SynthesizerTrn256NSFkm(nn.Module):
             upsample_rates,
             upsample_initial_channel,
             upsample_kernel_sizes,
-            gin_channels=0,
+            gin_channels=gin_channels,
             sr=sr,
             is_half=kwargs["is_half"]
         )
@@ -618,7 +629,7 @@ class SynthesizerTrn256NSFkm(nn.Module):
             5,
             1,
             16,
-            gin_channels=gin_channels,
+            gin_channels=0,
         )
         self.flow = ResidualCouplingBlock(
             inter_channels, hidden_channels, 5, 1, 3, gin_channels=gin_channels
