@@ -3,7 +3,7 @@ __pycache__/
 .venv/
 .env
 models/base/
-models/trained/dataset*/
+models/trained/features/
 models/trained/checkpoint_*
 models/trained/target.pth
 models/trained/voz_*.pth
