@@ -79,6 +79,10 @@ for start in range(0, len(audio), CHUNK):
     feats_t_full = feats_t_full[:, :min_t, :]
     mel_t = mel_t[:, :, :min_t]
 
+    all_feats.append(feats_t_full)
+    all_f0.append(f0_t)
+    all_mel.append(mel_t)
+
 feats_all = torch.cat(all_feats, dim=1)
 f0_all = torch.cat(all_f0, dim=1)
 mel_all = torch.cat(all_mel, dim=2)
