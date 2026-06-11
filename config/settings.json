@@ -3,8 +3,8 @@
     "sample_rate": 48000,
     "frame_size": 960,
     "channels": 1,
-    "input_device": 61,
-    "output_device": 12
+    "input_device": 59,
+    "output_device": 35
   },
   "vad": {
     "mode": 1,
@@ -12,9 +12,9 @@
     "padding_ms": 300
   },
   "rvc": {
-    "model_path": "C:/Users/Developer/OneDrive - OFFICE 365/Escritorio/PROYECTOS_NL/MODELAMIENTO_VOZ/models/trained/voz_jimmy.pth",
+    "model_path": "models/trained/voz_jimmy.pth",
     "f0_method": "parselmouth",
-    "f0_up_key": -3,
+    "f0_up_key": 0,
     "index_rate": 0.75,
     "protect": 0.33,
     "filter_radius": 3,

@@ -415,18 +415,18 @@ class VoiceModWindow(QMainWindow):
                 self._log("Audio capturado, aplicando conversion de voz...")
                 processed = audio.copy()
                 try:
-                    from core.rvc import RVCInference
-                    rvc = RVCInference(self.config_path)
-                    if rvc.generator is not None:
-                        converted = rvc.infer(audio.squeeze(), sr)
+                    from core.vc_engine import VoiceConverter
+                    vc = VoiceConverter(self.config_path)
+                    if vc.target_stats is not None:
+                        converted = vc.convert(audio.squeeze(), sr)
                         converted = np.asarray(converted)
                         if not np.all(np.isfinite(converted)):
                             converted = audio.squeeze()
-                            self._log("Audio convertido tenia NaN, usando original")
+                            self._log("Audio tenia NaN, usando original")
                         processed = converted.reshape(-1, 1)
                         self._log("Conversion aplicada (voz clonada)")
                     else:
-                        self._log("Modelo RVC no cargado, reproduciendo voz original")
+                        self._log("Estadisticas target no cargadas, usando original")
                 except Exception as e:
                     self._log(f"Error en conversion: {e}, reproduciendo original")
 
@@ -666,7 +666,8 @@ class VoiceModWindow(QMainWindow):
         if self.pipeline:
             self.pipeline.stop()
             if hasattr(self.pipeline, 'rvc'):
-                self.pipeline.rvc.cleanup()
+                if hasattr(self.pipeline, 'converter'):
+                    pass
             self.pipeline = None
         import gc; gc.collect()
         self.is_running = False
@@ -687,8 +688,8 @@ class VoiceModWindow(QMainWindow):
     def _update_pitch(self, value):
         self.pitch_label.setText(f"{value}st")
         self.cfg["rvc"]["f0_up_key"] = value
-        if self.pipeline and hasattr(self.pipeline, 'rvc') and self.pipeline.rvc:
-            self.pipeline.rvc.set_f0_shift(value)
+        if self.pipeline and hasattr(self.pipeline, 'converter') and self.pipeline.converter:
+            self.pipeline.converter.f0_up_key = value
 
     def _toggle_compact(self):
         self._set_compact(not self.compact)

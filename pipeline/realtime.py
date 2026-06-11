@@ -6,7 +6,7 @@ import numpy as np
 from queue import Queue, Empty
 
 from audio import AudioCapture, AudioPlayback, VADBuffer, VoiceActivityDetector
-from core.rvc import RVCInference
+from core.vc_engine import VoiceConverter
 from .buffer import CrossFader
 
 
@@ -37,7 +37,7 @@ class RealtimePipeline:
             fade_len=self.cfg["pipeline"]["crossfade_len"]
         )
 
-        self.rvc = RVCInference(config_path)
+        self.converter = VoiceConverter(config_path)
 
         self.input_device = audio_cfg.get("input_device")
         self.output_device = audio_cfg.get("output_device")
@@ -133,7 +133,7 @@ class RealtimePipeline:
             frame = np.array([frame.item()])
 
         try:
-            processed = self.rvc.infer(frame, self.sr)
+            processed = self.converter.convert(frame, self.sr)
             if not np.all(np.isfinite(processed)):
                 processed = frame
         except Exception:
