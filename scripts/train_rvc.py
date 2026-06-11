@@ -106,12 +106,14 @@ for epoch in range(1, EPOCHS + 1):
     mel_b = mel_all[:, :1025, start:end]
 
     lengths = torch.tensor([feats_b.size(2)])
+    mel_lengths = torch.tensor([mel_b.size(2)])
     spk_id = torch.tensor([0])
 
     optimizer.zero_grad()
-    output, _, _, _, _ = model(feats_b, lengths, f0_b, f0_b,
-                                mel_b, mel_b, spk_id)
-    loss = loss_fn(output, mel_b)
+    output, ids_slice, x_mask, y_mask, _ = model(
+        feats_b, lengths, f0_b, f0_b, mel_b, mel_lengths, spk_id
+    )
+    loss = loss_fn(output, mel_b[:, :, :output.size(2)])
     loss.backward()
     optimizer.step()
 

@@ -555,6 +555,20 @@ class SynthesizerTrnMs256NSF(nn.Module):
         z = self.flow(z_p, x_mask, g=g, reverse=True)
         o = self.dec((z * x_mask)[:, :, :max_len],pitchf, g=None)
         return o, x_mask, (z, z_p, m_p, logs_p)
+
+    def forward(self, phone, phone_lengths, pitch, pitchf, y, y_lengths, ds):
+        m_p, logs_p, x_mask = self.enc_p(phone, pitch, phone_lengths)
+        z, m_q, logs_q, y_mask = self.enc_q(y, y_lengths, g=None)
+        z_p = self.flow(z, y_mask, g=None)
+        z_slice, ids_slice = commons.rand_slice_segments(
+            z, y_lengths, self.segment_size
+        )
+        pitchf = commons.slice_segments2(
+            pitchf, ids_slice, self.segment_size
+        )
+        o = self.dec(z_slice, pitchf, g=None)
+        return o, ids_slice, x_mask, y_mask, (z, z_p, m_p, logs_p, m_q, logs_q)
+
 class SynthesizerTrn256NSFkm(nn.Module):
     """
     Synthesizer for Training
