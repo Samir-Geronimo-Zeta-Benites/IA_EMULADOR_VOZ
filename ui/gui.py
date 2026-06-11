@@ -417,21 +417,23 @@ class VoiceModWindow(QMainWindow):
                 try:
                     from core.vc_engine import VoiceConverter
                     vc = VoiceConverter(self.config_path)
-                    if vc.target_stats is not None:
+                    if vc.model is not None:
                         converted = vc.convert(audio.squeeze(), sr)
                         converted = np.asarray(converted)
                         if not np.all(np.isfinite(converted)):
                             converted = audio.squeeze()
-                            self._log("Audio tenia NaN, usando original")
                         processed = converted.reshape(-1, 1)
                         self._log("Conversion aplicada (voz clonada)")
                     else:
-                        self._log("Estadisticas target no cargadas, usando original")
+                        self._log("Modelo RVC no cargado, usando original")
                 except Exception as e:
                     self._log(f"Error en conversion: {e}, reproduciendo original")
 
-                sd.play(processed, sr, device=cfg.get("output_device"))
-                sd.wait()
+                try:
+                    sd.play(processed, sr, device=cfg.get("output_device"))
+                    sd.wait()
+                except Exception as e:
+                    self._log(f"Error reproduccion: {e}")
                 self._log("Prueba de salida completada — verificá Meet")
             except Exception as e:
                 self._log(f"Error: {e}")
