@@ -414,16 +414,17 @@ class VoiceModWindow(QMainWindow):
                 sd.wait()
                 self._log("Audio capturado, aplicando conversion de voz...")
                 processed = audio.copy()
-                if self.pipeline and hasattr(self.pipeline, 'rvc') and self.pipeline.rvc:
+                try:
                     from core.rvc import RVCInference
-                    if isinstance(self.pipeline.rvc, RVCInference) and self.pipeline.rvc.generator is not None:
-                        processed = self.pipeline.rvc.infer(audio.squeeze(), sr)
-                        processed = processed.reshape(-1, 1)
+                    rvc = RVCInference(self.config_path)
+                    if rvc.generator is not None:
+                        converted = rvc.infer(audio.squeeze(), sr)
+                        processed = np.asarray(converted).reshape(-1, 1)
                         self._log("Conversion aplicada (voz clonada)")
                     else:
                         self._log("Modelo RVC no cargado, reproduciendo voz original")
-                else:
-                    self._log("Pipeline inactivo, reproduciendo voz original")
+                except Exception as e:
+                    self._log(f"Error en conversion: {e}, reproduciendo original")
 
                 sd.play(processed, sr, device=cfg.get("output_device"))
                 sd.wait()
