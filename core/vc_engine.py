@@ -20,9 +20,9 @@ class VoiceConverter:
         stats_path = model_path.with_suffix(".stats.npy")
         if stats_path.exists():
             self.target_stats = np.load(str(stats_path), allow_pickle=True).item()
-            print(f"Estadisticas target cargadas")
+            print(f"Estadisticas cargadas")
         else:
-            print("Sin estadisticas target - entrena el modelo primero")
+            print("Sin estadisticas - entrena el modelo")
 
     def train(self, audio_path: str):
         audio, sr = librosa.load(audio_path, sr=self.sr, mono=True)
@@ -42,17 +42,16 @@ class VoiceConverter:
         }
 
         model_path = Path(self.cfg["rvc"]["model_path"])
-        stats_path = model_path.with_suffix(".stats.npy")
-        np.save(str(stats_path), stats)
+        np.save(str(model_path.with_suffix(".stats.npy")), stats)
         self.target_stats = stats
-        print(f"F0 target: mean={stats['f0_mean']:.0f}Hz, std={stats['f0_std']:.0f}Hz")
+        print(f"F0 target: {stats['f0_mean']:.0f}Hz std={stats['f0_std']:.0f}Hz")
         return stats
 
     def convert(self, audio: np.ndarray, sr: int = 48000) -> np.ndarray:
         if self.target_stats is None:
             return audio
 
-        audio = audio.squeeze().astype(np.float32)
+        audio = audio.squeeze().astype(np.float64)
         if audio.ndim == 0 or len(audio) < sr * 0.1:
             return np.zeros(sr, dtype=np.float32)
 
@@ -60,42 +59,27 @@ class VoiceConverter:
         if sr != self.sr:
             audio = librosa.resample(audio, orig_sr=sr, target_sr=self.sr)
 
-        max_val = np.max(np.abs(audio))
-        if max_val < 1e-8:
+        mx = np.max(np.abs(audio))
+        if mx < 1e-8:
             return audio
-        audio_norm = audio / max_val
+        audio = audio / mx * 0.8
 
-        f0, _ = pw.dio(audio_norm.astype(np.float64), self.sr,
-                       f0_floor=50.0, f0_ceil=1100.0)
-        f0 = pw.stonemask(audio_norm.astype(np.float64), f0, _, self.sr)
+        target_hz = self.target_stats["f0_mean"]
+        default_hz = 120.0
+        semitones = 12.0 * np.log2(target_hz / default_hz) + self.f0_up_key
 
-        f0_src = f0[f0 > 0]
-        if len(f0_src) > 3:
-            src_mean = float(np.mean(f0_src))
-            target_mean = self.target_stats["f0_mean"]
-            ratio = target_mean / (src_mean + 1e-3)
-            ratio = max(0.5, min(2.0, ratio))
-
-            semitones = 12.0 * np.log2(ratio) + self.f0_up_key
-            semitones = max(-12.0, min(12.0, semitones))
-
-            audio_norm = audio_norm.astype(np.float64)
-            shifted = librosa.effects.pitch_shift(
-                audio_norm, sr=self.sr, n_steps=semitones,
-                bins_per_octave=24
-            )
-        else:
-            shifted = audio_norm
+        shifted = librosa.effects.pitch_shift(
+            audio, sr=self.sr, n_steps=semitones,
+            bins_per_octave=24
+        )
 
         shifted = np.nan_to_num(shifted, nan=0.0)
-        out_max = np.max(np.abs(shifted))
-        if out_max > 1e-8:
-            shifted = shifted / out_max * 0.95
-
-        if shifted.max() < 1e-6:
-            shifted = audio
+        smax = np.max(np.abs(shifted))
+        if smax > 1e-8:
+            shifted = shifted / smax * 0.9
 
         if orig_sr != self.sr:
             shifted = librosa.resample(shifted, orig_sr=self.sr, target_sr=orig_sr)
 
+        shifted = np.clip(shifted, -0.95, 0.95)
         return shifted.astype(np.float32)
