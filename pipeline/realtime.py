@@ -25,6 +25,7 @@ class RealtimePipeline:
         self.frame_size = audio_cfg["frame_size"]
 
         self.converter = VoiceConverter(config_path)
+        self._convert_ct = 0
         self.input_device = audio_cfg.get("input_device")
         self.output_device = audio_cfg.get("output_device")
         self._last_input = np.zeros(960, dtype=np.float32)
@@ -88,26 +89,7 @@ class RealtimePipeline:
 
             self._last_input = frame[-960:]
 
-            # Energy-based voice detection
-            energy = float(np.sqrt(np.mean(frame ** 2)))
-            is_speech = energy > 0.004  # simple threshold
-
-            if is_speech:
-                if len(self._accum) == 0:
-                    self._accum = frame.copy()
-                else:
-                    self._accum = np.concatenate([self._accum, frame])
-            else:
-                if len(self._accum) > 0:
-                    chunk = self._accum.copy()
-                    self._accum = np.array([], dtype=np.float32)
-                    processed = self._convert(chunk)
-                    if processed is not None and len(processed) > 0:
-                        self._last_output = processed[-960:]
-                        try:
-                            self.output_queue.put_nowait(processed)
-                        except: pass
-                continue
+            self._accum = np.concatenate([self._accum, frame])
 
             if len(self._accum) >= int(self.sr * 0.3):
                 chunk = self._accum.copy()
@@ -123,6 +105,10 @@ class RealtimePipeline:
         t0 = time.perf_counter()
         try:
             out = self.converter.convert(audio, self.sr)
+            if self._convert_ct % 5 == 0:
+                diff = np.max(np.abs(audio[:len(out)] - out[:len(audio)]))
+                print(f"  [pipe] convert {self._convert_ct}: diff={diff:.4f}")
+            self._convert_ct += 1
             if out is None or len(out) == 0 or not np.all(np.isfinite(out)):
                 return None
             elapsed = time.perf_counter() - t0
