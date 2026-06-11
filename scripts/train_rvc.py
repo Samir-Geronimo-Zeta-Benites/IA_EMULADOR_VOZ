@@ -1,4 +1,4 @@
-import sys, gc, numpy as np, torch, librosa
+import sys, gc, numpy as np, torch
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 torch.set_num_threads(2)
@@ -10,28 +10,32 @@ SR = 40000
 
 def log(msg): print(msg, flush=True)
 
-log("Loading features (first 15s)...")
+log("Loading features + raw audio...")
 chunks = sorted(FEAT_DIR.glob("feats_*.npy"))
-max_frames = 15 * SR // 400
+max_frames = 10 * SR // 400
 loaded = 0
-all_feats, all_f0, all_f0f, all_mel = [], [], [], []
+all_feats, all_f0, all_f0f, all_mel, all_audio = [], [], [], [], []
 for chunk in chunks:
     idx = chunk.stem.split("_")[1]
     f = torch.from_numpy(np.load(FEAT_DIR / f"feats_{idx}.npy")).float()
     f0i = torch.from_numpy(np.load(FEAT_DIR / f"f0_{idx}.npy")).long()
     f0fv = torch.from_numpy(np.load(FEAT_DIR / f"f0f_{idx}.npy"))
     m = np.load(FEAT_DIR / f"mel_{idx}.npy")
-    take = min(f.size(1), max_frames - loaded)
+    a = np.load(FEAT_DIR / f"audio_{idx}.npy")
+    take = min(f.size(1), m.shape[1], len(a) // 400, max_frames - loaded)
     if take > 0:
-        all_feats.append(f[:, :take, :]); all_f0.append(f0i[:take])
-        all_f0f.append(f0fv[:take]); all_mel.append(torch.from_numpy(m).unsqueeze(0).float()[:, :, :take])
+        all_feats.append(f[:, :take, :])
+        all_f0.append(f0i[:take]); all_f0f.append(f0fv[:take])
+        all_mel.append(torch.from_numpy(m).unsqueeze(0).float()[:, :, :take])
+        all_audio.append(torch.from_numpy(a).float()[:take * 400])
         loaded += take; log(f"  {chunk.stem}: {take}")
     if loaded >= max_frames: break
 
 feats_all = torch.cat(all_feats, dim=1); f0_all = torch.cat(all_f0).unsqueeze(0)
 f0f_all = torch.cat(all_f0f).unsqueeze(0); mel_all = torch.cat(all_mel, dim=2)
-gc.collect()
-log(f"Total: feats={feats_all.shape} f0={f0_all.shape} mel={mel_all.shape}")
+audio_all = torch.cat(all_audio)
+del all_feats, all_f0, all_f0f, all_mel, all_audio; gc.collect()
+log(f"Total: feats={feats_all.shape} f0={f0_all.shape} mel={mel_all.shape} audio={audio_all.shape}")
 
 log("Loading RVC...")
 from core.rvc_model.models import SynthesizerTrnMs256NSF
@@ -48,23 +52,27 @@ model = SynthesizerTrnMs256NSF(
 )
 model.load_state_dict(ckpt["model"], strict=False); model.train(); del ckpt; gc.collect()
 
-log("Training with numpy-based mel loss...")
-opt = torch.optim.SGD(model.parameters(), lr=1e-4)  # no momentum = less memory
-TRAIN_FRAMES = max(SR // 400 * 3, 400)  # big enough for segment_size
+log(f"Training with TIME-DOMAIN L1 loss...")
+opt = torch.optim.SGD(model.parameters(), lr=1e-4)
+TF = SR // 400 * 2
 
 for ep in range(1, EPOCHS + 1):
-    t_total = feats_all.size(1)
-    s = np.random.randint(0, max(1, t_total - TRAIN_FRAMES))
-    e = s + TRAIN_FRAMES
+    t = feats_all.size(1)
+    s = np.random.randint(0, max(1, t - TF))
+    e = s + TF
 
-    feats_b = feats_all[:, s:e, :]; f0_b = f0_all[:, s:e]
-    f0f_b = f0f_all[:, s:e]; mel_b = mel_all[:, :1025, s:e]
-    lengths = torch.tensor([feats_b.size(1)])
-    mel_len = torch.tensor([mel_b.size(2)])
+    fb = feats_all[:, s:e, :]; f0b = f0_all[:, s:e]; ffb = f0f_all[:, s:e]; mb = mel_all[:, :1025, s:e]
+    audio_start = s * 400; audio_end = e * 400
+    audio_target = audio_all[audio_start:audio_end]
+
+    lengths = torch.tensor([fb.size(1)]); ml = torch.tensor([mb.size(2)])
 
     opt.zero_grad()
-    o, ids, _, _, _ = model(feats_b, lengths, f0_b, f0f_b, mel_b, mel_len, torch.tensor([0]))
-    loss = o.abs().mean()  # keep output non-zero
+    o, _, _, _, _ = model(fb, lengths, f0b, ffb, mb, ml, torch.tensor([0]))
+
+    min_samples = min(o.numel(), audio_target.numel())
+    loss = torch.nn.functional.l1_loss(o.flatten()[:min_samples],
+                                        audio_target.flatten()[:min_samples])
     loss.backward()
     opt.step()
 

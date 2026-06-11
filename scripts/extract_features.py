@@ -52,6 +52,7 @@ for start in range(0, len(audio), CHUNK):
     np.save(OUT_DIR / f"f0_{feat_idx}.npy", f0_int.astype(np.int64))
     np.save(OUT_DIR / f"f0f_{feat_idx}.npy", f0_float)
     np.save(OUT_DIR / f"mel_{feat_idx}.npy", mel.astype(np.float32))
+    np.save(OUT_DIR / f"audio_{feat_idx}.npy", seg.astype(np.float32))
     feat_idx += 1
     gc.collect()
 
