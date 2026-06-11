@@ -1,15 +1,12 @@
-__pycache__/
 *.pyc
 .venv/
 .env
 models/base/
 models/trained/
 models/profiles/
-voces_audios_crudos/
 *.onnx
 *.pth
 *.npy
-*.onnx
 *.7z
 _*.wav
 RVC_WebUI/
