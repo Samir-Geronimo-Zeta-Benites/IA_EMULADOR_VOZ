@@ -57,6 +57,9 @@ class VoiceActivityDetector:
         return energy > self._energy_threshold
 
     def process_frame(self, frame: np.ndarray, sr: int = 48000) -> bool:
+        frame = frame.squeeze()
+        if frame.ndim > 1:
+            frame = frame.mean(axis=0) if frame.ndim == 2 else frame.flatten()
         if sr != 16000:
             frame = self._resample(frame, sr, 16000)
         frame_int16 = (frame * 32767).astype(np.int16)
