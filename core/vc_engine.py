@@ -146,4 +146,4 @@ class VoiceConverter:
         with torch.no_grad():
             outputs = self._hubert(**inputs.to(self.device))
             feats = outputs.last_hidden_state
-        return feats.cpu().numpy().transpose(0, 2, 1)
+        return feats.cpu().numpy()  # (1, T, 768)

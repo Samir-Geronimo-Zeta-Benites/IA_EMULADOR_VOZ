@@ -71,16 +71,15 @@ for start in range(0, len(audio), CHUNK):
     S = librosa.stft(seg, n_fft=2048, hop_length=400)
     mel = np.abs(S)
 
-    f0_t = torch.from_numpy(f0).float().unsqueeze(0)
-    f0_t = f0_t[:, :feats.shape[1]]
-    feats_t_full = torch.from_numpy(feats).float().transpose(1, 2)
-    feats_t_full = feats_t_full[:, :, :f0_t.size(-1)]
+    f0_t = torch.from_numpy(f0).float().unsqueeze(0)  # (1, T_f0)
+    feats_t_full = torch.from_numpy(feats).float()     # (1, T_feat, 768)
+    mel_t = torch.from_numpy(mel).float().unsqueeze(0) # (1, 1025, T_mel)
+    min_t = min(f0_t.size(1), feats_t_full.size(1), mel_t.size(2))
+    f0_t = f0_t[:, :min_t]
+    feats_t_full = feats_t_full[:, :min_t, :]
+    mel_t = mel_t[:, :, :min_t]
 
-    all_feats.append(feats_t_full)
-    all_f0.append(f0_t)
-    all_mel.append(torch.from_numpy(mel).float().unsqueeze(0)[:, :, :f0_t.size(-1)])
-
-feats_all = torch.cat(all_feats, dim=2)
+feats_all = torch.cat(all_feats, dim=1)
 f0_all = torch.cat(all_f0, dim=1)
 mel_all = torch.cat(all_mel, dim=2)
 log(f"Features: feats={feats_all.shape}, f0={f0_all.shape}, mel={mel_all.shape}")
@@ -98,14 +97,16 @@ loss_fn = torch.nn.L1Loss()
 
 TRAIN_LEN = SR * 3
 for epoch in range(1, EPOCHS + 1):
-    start = np.random.randint(0, max(1, feats_all.size(2) - TRAIN_LEN // 400))
-    end = start + TRAIN_LEN // 400
+    t_total = feats_all.size(1)
+    seg_frames = TRAIN_LEN // 400
+    start = np.random.randint(0, max(1, t_total - seg_frames))
+    end = start + seg_frames
 
-    feats_b = feats_all[:, :, start:end]
+    feats_b = feats_all[:, start:end, :]
     f0_b = f0_all[:, start:end]
     mel_b = mel_all[:, :1025, start:end]
 
-    lengths = torch.tensor([feats_b.size(2)])
+    lengths = torch.tensor([feats_b.size(1)])
     mel_lengths = torch.tensor([mel_b.size(2)])
     spk_id = torch.tensor([0])
 
