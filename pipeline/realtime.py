@@ -157,6 +157,9 @@ class RealtimePipeline:
         def callback(outdata, frames, time_info, status):
             try:
                 chunk = self.output_queue.get_nowait()
+                if chunk is None:
+                    outdata.fill(0)
+                    return
                 if len(chunk) >= len(outdata):
                     outdata[:] = chunk[:len(outdata)].reshape(-1, 1)
                 else:
