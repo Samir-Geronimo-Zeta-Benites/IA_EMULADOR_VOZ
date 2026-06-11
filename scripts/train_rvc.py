@@ -52,7 +52,7 @@ model = SynthesizerTrnMs256NSF(
 )
 model.load_state_dict(ckpt["model"], strict=False); model.train(); del ckpt; gc.collect()
 
-log(f"Training with TIME-DOMAIN L1 loss...")
+log(f"Training with KL divergence + waveform L1...")
 opt = torch.optim.SGD(model.parameters(), lr=1e-4)
 TF = SR // 400 * 2
 
@@ -68,11 +68,18 @@ for ep in range(1, EPOCHS + 1):
     lengths = torch.tensor([fb.size(1)]); ml = torch.tensor([mb.size(2)])
 
     opt.zero_grad()
-    o, _, _, _, _ = model(fb, lengths, f0b, ffb, mb, ml, torch.tensor([0]))
+    o, _, _, _, (z, z_p, m_p, logs_p, m_q, logs_q) = model(fb, lengths, f0b, ffb, mb, ml, torch.tensor([0]))
 
+    # KL divergence loss: KL(q||p) where q=N(m_q, logs_q), p=N(m_p, logs_p)
+    kl = logs_p - logs_q + 0.5 * ((m_q - m_p).pow(2) * (-2 * logs_p).exp() + (2 * (logs_q - logs_p)).exp() - 1)
+    kl = kl.mean()
+
+    # Waveform L1 loss
     min_samples = min(o.numel(), audio_target.numel())
-    loss = torch.nn.functional.l1_loss(o.flatten()[:min_samples],
-                                        audio_target.flatten()[:min_samples])
+    l1 = torch.nn.functional.l1_loss(o.flatten()[:min_samples],
+                                      audio_target.flatten()[:min_samples])
+
+    loss = l1 + 0.1 * kl
     loss.backward()
     opt.step()
 
