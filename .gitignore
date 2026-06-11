@@ -7,8 +7,10 @@ models/trained/dataset*/
 models/trained/checkpoint_*
 models/trained/target.pth
 models/trained/voz_*.pth
+models/trained/*.stats.npy
 models/profiles/
 voces_audios_crudos/
 *.onnx
 *.pth
 .DS_Store
+_*.wav
