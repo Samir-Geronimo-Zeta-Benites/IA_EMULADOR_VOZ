@@ -159,3 +159,9 @@ class VoiceConverter:
             outputs = self._hubert(**inputs.to(self.device))
             feats = outputs.last_hidden_state
         return feats.cpu().numpy()  # (1, T, 768)
+
+    def _unload_hubert(self):
+        if self._hubert is not None:
+            self._hubert = None
+            self._hubert_fe = None
+            import gc; gc.collect()
