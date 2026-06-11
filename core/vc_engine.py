@@ -12,6 +12,7 @@ class VoiceConverter:
         self.f0_up_key = self.cfg["rvc"]["f0_up_key"]
         self.target_stats = None
         self._load_target()
+        self._debug_n = 0
 
     def _load_target(self):
         model_path = Path(self.cfg["rvc"]["model_path"])
@@ -66,48 +67,44 @@ class VoiceConverter:
         mag = np.abs(S)
         phase = np.angle(S)
 
-        # === PITCH SHIFT via F0 ===
         target_hz = self.target_stats["f0_mean"]
-        try:
-            f0_src, _, _ = librosa.pyin(audio, fmin=50, fmax=1100,
-                                         sr=self.sr, fill_na=0)
-            f0_v = f0_src[f0_src > 0]
-            if len(f0_v) > 3:
-                src_hz = float(np.mean(f0_v))
-            else:
-                src_hz = 120.0
-        except Exception:
-            src_hz = 120.0
+        pitch_ratio = target_hz / 120.0 * (2 ** (self.f0_up_key / 12))
+        pitch_ratio = max(0.5, min(2.0, pitch_ratio))
 
-        pitch_ratio = target_hz / max(src_hz, 1e-3)
-        pitch_ratio = max(0.6, min(1.8, pitch_ratio))
-        pitch_ratio = pitch_ratio * (2 ** (self.f0_up_key / 12))
+        # Force minimum 4 semitones shift so it's OBVIOUS
+        if 0.79 < pitch_ratio < 1.26 and self.f0_up_key == 0:
+            pitch_ratio = target_hz / 120.0 * 1.26  # +4st minimum
 
         n_freqs = mag.shape[0]
+        freq_axis = np.fft.rfftfreq(2048, 1.0 / self.sr)
         mag_shifted = np.zeros_like(mag)
-        for f in range(n_freqs):
-            src_f = int(f / pitch_ratio)
-            if 0 <= src_f < n_freqs:
-                mag_shifted[f] = mag[src_f]
+
+        for f in range(1, n_freqs):
+            src_idx = int(f / pitch_ratio)
+            if 0 <= src_idx < n_freqs:
+                alpha = (f / pitch_ratio) - src_idx
+                mag_shifted[f] = (1 - alpha) * mag[src_idx] + alpha * mag[min(src_idx + 1, n_freqs - 1)]
             else:
-                mag_shifted[f] = mag[0] * (n_freqs - f) / n_freqs
+                mag_shifted[f] = mag[f]
 
-        # === SPECTRAL SHAPING (EQ to match target timbre) ===
-        target_spec = self.target_stats["spec_mean"]
-        src_spec = 20 * np.log10(np.mean(mag_shifted, axis=1) + 1e-10)
+        mag_shifted[0] = mag[0]
 
-        min_len = min(len(src_spec), len(target_spec))
-        target_spec = target_spec[:min_len]
-        src_spec = src_spec[:min_len]
+        target_spec_db = self.target_stats["spec_mean"]
+        target_spec_db = np.maximum(target_spec_db, -80)
+        src_spec_db = 20 * np.log10(np.maximum(np.mean(mag_shifted, axis=1), 1e-10))
 
-        eq = target_spec - src_spec
-        eq_smooth = np.convolve(eq, np.hanning(21), mode='same') / np.sum(np.hanning(21))
-        eq_smooth = np.clip(eq_smooth, -15, 15)
+        min_len = min(len(src_spec_db), len(target_spec_db))
+        eq = target_spec_db[:min_len] - src_spec_db[:min_len]
+        eq = np.nan_to_num(eq, nan=0.0)
+        eq = np.clip(eq, -20, 20)
+        win = np.hanning(41)
+        win = win / win.sum()
+        eq_smooth = np.convolve(eq, win, mode='same')
+        eq_smooth = np.clip(eq_smooth, -12, 12)
 
         for f in range(min_len):
             mag_shifted[f] *= 10 ** (eq_smooth[f] / 20)
 
-        # === RECONSTRUCT ===
         mag_shifted = np.maximum(mag_shifted, 1e-10)
         S_out = mag_shifted * np.exp(1j * phase[:mag_shifted.shape[0]])
         y = librosa.istft(S_out, hop_length=160, length=len(audio))
