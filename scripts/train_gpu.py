@@ -14,8 +14,11 @@ log(f"Device: {DEVICE}")
 log("Loading audio...")
 import librosa
 audio, _ = librosa.load(AUDIO_PATH, sr=SR, mono=True)
-audio = audio[:90 * SR]
+# Use full audio (up to 10 min) for best quality
+max_seconds = 600  # 10 minutes
+audio = audio[:max_seconds * SR]
 audio = audio / (np.max(np.abs(audio)) + 1e-8)
+log(f"Audio: {len(audio)/SR:.0f}s")
 
 log("Extracting HuBERT features (GPU)...")
 from transformers import HubertModel, Wav2Vec2FeatureExtractor
