@@ -552,7 +552,7 @@ class SynthesizerTrnMs256NSF(nn.Module):
         g = self.emb_g(ds).unsqueeze(-1)  # [b, h, 1]#
         z_p = (m_p + torch.exp(logs_p) * torch.randn_like(m_p) * 0.66) * x_mask
 
-        z = self.flow(z_p, x_mask, g=g, reverse=True)
+        z = self.flow(z_p, x_mask, g=None, reverse=True)
         o = self.dec((z * x_mask)[:, :, :max_len],pitchf, g=None)
         return o, x_mask, (z, z_p, m_p, logs_p)
 

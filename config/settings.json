@@ -1,46 +1,46 @@
 {
-  "audio": {
-    "sample_rate": 48000,
-    "frame_size": 960,
-    "channels": 1,
-    "input_device": 1,
-    "output_device": 12
-  },
-  "vad": {
-    "mode": 1,
-    "frame_ms": 30,
-    "padding_ms": 300
-  },
-  "rvc": {
-    "model_path": "models/trained/voz_jimmy.pth",
-    "f0_method": "parselmouth",
-    "f0_up_key": 0,
-    "index_rate": 0.75,
-    "protect": 0.33,
-    "filter_radius": 3,
-    "rms_mix_rate": 0.25,
-    "version": "v2"
-  },
-  "pipeline": {
-    "buffer_size_ms": 200,
-    "hop_size": 160,
-    "crossfade_len": 128,
-    "use_gpu": false
-  },
-  "voicemeeter": {
-    "enabled": true,
-    "strip_index": 0,
-    "output_channel": "B1",
-    "vban_ip": "127.0.0.1",
-    "vban_port": 6980
-  },
-  "training": {
-    "epochs": 50,
-    "batch_size": 2,
-    "learning_rate": 0.0001,
-    "save_every_epoch": 10,
-    "total_epoch": 50,
-    "version": "v2",
-    "sr": 40000
-  }
+    "audio":  {
+                  "sample_rate":  48000,
+                  "frame_size":  960,
+                  "channels":  1,
+                  "input_device":  1,
+                  "output_device":  12
+              },
+    "vad":  {
+                "mode":  1,
+                "frame_ms":  30,
+                "padding_ms":  300
+            },
+    "rvc":  {
+                "model_path":  "models/trained/voz_jimmy.pth",
+                "f0_method":  "parselmouth",
+                "f0_up_key":  0,
+                "index_rate":  0.75,
+                "protect":  0.33,
+                "filter_radius":  3,
+                "rms_mix_rate":  0.25,
+                "version":  "v2"
+            },
+    "pipeline":  {
+                     "buffer_size_ms":  200,
+                     "hop_size":  160,
+                     "crossfade_len":  128,
+                     "use_gpu":  false
+                 },
+    "voicemeeter":  {
+                        "enabled":  true,
+                        "strip_index":  0,
+                        "output_channel":  "B1",
+                        "vban_ip":  "127.0.0.1",
+                        "vban_port":  6980
+                    },
+    "training":  {
+                     "epochs":  50,
+                     "batch_size":  2,
+                     "learning_rate":  0.0001,
+                     "save_every_epoch":  10,
+                     "total_epoch":  50,
+                     "version":  "v2",
+                     "sr":  40000
+                 }
 }

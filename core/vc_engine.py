@@ -22,29 +22,37 @@ class VoiceConverter:
             from core.rvc_model.models import SynthesizerTrnMs256NSF
 
             model_path = Path(self.cfg["rvc"]["model_path"])
-            base_path = Path("models/base/f0G40k.pth")
 
-            if base_path.exists():
+            if model_path.exists():
+                ckpt = torch.load(str(model_path), map_location="cpu")
+                sd = ckpt["model"]
+            else:
+                base_path = Path("models/base/f0G40k.pth")
+                if not base_path.exists():
+                    print("No model found")
+                    return
                 ckpt = torch.load(str(base_path), map_location="cpu")
                 sd = ckpt["model"]
-                self.model = SynthesizerTrnMs256NSF(
-                    spec_channels=1025, segment_size=12800,
-                    inter_channels=192, hidden_channels=192,
-                    filter_channels=768, n_heads=2, n_layers=6,
-                    kernel_size=3, p_dropout=0, resblock="1",
-                    resblock_kernel_sizes=[3, 7, 11],
-                    resblock_dilation_sizes=[[1, 3, 5], [1, 3, 5], [1, 3, 5]],
-                    upsample_rates=[10, 10, 2, 2],
-                    upsample_initial_channel=512,
-                    upsample_kernel_sizes=[16, 16, 4, 4],
-                    spk_embed_dim=109, gin_channels=256,
-                    sr=self.sr, is_half=False, phone_dim=768,
-                )
-                self.model.load_state_dict(sd, strict=False)
-                self.model.eval().to(self.device)
-                print(f"RVC model loaded: f0G40k")
-            else:
-                print("f0G40k.pth not found in models/base/")
+                print("Using base model (not fine-tuned)")
+
+            self.model = SynthesizerTrnMs256NSF(
+                spec_channels=1025, segment_size=12800,
+                inter_channels=192, hidden_channels=192,
+                filter_channels=768, n_heads=2, n_layers=6,
+                kernel_size=3, p_dropout=0, resblock="1",
+                resblock_kernel_sizes=[3, 7, 11],
+                resblock_dilation_sizes=[[1, 3, 5], [1, 3, 5], [1, 3, 5]],
+                upsample_rates=[10, 10, 2, 2],
+                upsample_initial_channel=512,
+                upsample_kernel_sizes=[16, 16, 4, 4],
+                spk_embed_dim=109, gin_channels=256,
+                sr=self.sr, is_half=False, phone_dim=768,
+            )
+            self.model.load_state_dict(sd, strict=False)
+            self.model.eval().to(self.device)
+            if hasattr(self.model, 'remove_weight_norm'):
+                self.model.remove_weight_norm()
+            print(f"RVC model loaded: {model_path.name}")
         except Exception as e:
             print(f"Error loading RVC: {e}")
             self.model = None
@@ -94,12 +102,16 @@ class VoiceConverter:
                        f0_floor=50, f0_ceil=1100)
         f0 = pw.stonemask(audio.astype(np.float64), f0, t, self.sr)
 
-        f0_t = torch.from_numpy(f0).float().unsqueeze(0)
+        f0_raw = torch.from_numpy(f0).float().unsqueeze(0)
         feats_t = torch.from_numpy(feats).float()
 
-        min_len = min(feats_t.size(-1), f0_t.size(-1))
-        feats_t = feats_t[:, :, :min_len]
-        f0_t = f0_t[:, :min_len]
+        t_feats = feats_t.size(1)
+        t_f0 = f0_raw.size(1)
+        min_len = min(t_feats, t_f0)
+        feats_t = feats_t[:, :min_len, :]
+        f0_raw = f0_raw[:, :min_len]
+
+        f0_int = torch.clamp((f0_raw / 1100.0 * 256.0).long(), 0, 255)
 
         lengths = torch.tensor([min_len])
         spk_id = torch.tensor([0])
@@ -107,7 +119,7 @@ class VoiceConverter:
         with torch.no_grad():
             try:
                 output, _, _ = self.model.infer(
-                    feats_t, lengths, f0_t, f0_t, spk_id, max_len=min_len
+                    feats_t, lengths, f0_int, f0_raw, spk_id, max_len=None
                 )
                 output = output.squeeze().cpu().numpy()
             except Exception as e:
