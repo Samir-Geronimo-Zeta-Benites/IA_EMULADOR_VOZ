@@ -33,6 +33,7 @@ class Vocoder:
             n_fft=self.n_fft,
             hop_length=self.hop_length,
             win_length=self.win_length,
-            n_iter=32,
+            n_iter=16,
         )
+        audio = np.nan_to_num(audio, nan=0.0)
         return audio.astype(np.float32)

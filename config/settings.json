@@ -3,8 +3,8 @@
     "sample_rate": 48000,
     "frame_size": 960,
     "channels": 1,
-    "input_device": 59,
-    "output_device": 88
+    "input_device": 61,
+    "output_device": 12
   },
   "vad": {
     "mode": 1,

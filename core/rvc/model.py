@@ -105,7 +105,13 @@ class RVCInference:
 
         from core.vocoder import Vocoder
         vocoder = Vocoder()
-        output = vocoder.decode(mel.cpu().numpy())
+        mel_np = mel.cpu().numpy()
+        mel_np = np.nan_to_num(mel_np, nan=0.0, posinf=1.0, neginf=-1.0)
+        mel_np = np.clip(mel_np, -5.0, 5.0)
+        output = vocoder.decode(mel_np)
+        output = np.nan_to_num(output, nan=0.0)
+        if np.max(np.abs(output)) < 1e-6:
+            output = audio
         return output
 
     def extract_features(self, audio, sr):

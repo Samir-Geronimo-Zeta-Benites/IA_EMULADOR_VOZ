@@ -118,6 +118,8 @@ class RealtimePipeline:
 
         try:
             processed = self.rvc.infer(frame, self.sr)
+            if not np.all(np.isfinite(processed)):
+                processed = frame
         except Exception as e:
             processed = frame
 

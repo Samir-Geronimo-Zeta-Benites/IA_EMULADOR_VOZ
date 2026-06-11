@@ -419,7 +419,11 @@ class VoiceModWindow(QMainWindow):
                     rvc = RVCInference(self.config_path)
                     if rvc.generator is not None:
                         converted = rvc.infer(audio.squeeze(), sr)
-                        processed = np.asarray(converted).reshape(-1, 1)
+                        converted = np.asarray(converted)
+                        if not np.all(np.isfinite(converted)):
+                            converted = audio.squeeze()
+                            self._log("Audio convertido tenia NaN, usando original")
+                        processed = converted.reshape(-1, 1)
                         self._log("Conversion aplicada (voz clonada)")
                     else:
                         self._log("Modelo RVC no cargado, reproduciendo voz original")
