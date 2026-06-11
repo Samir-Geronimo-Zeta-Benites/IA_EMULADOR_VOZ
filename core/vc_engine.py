@@ -73,12 +73,13 @@ class VoiceConverter:
         if self.model is None:
             return audio
 
+        orig_sr = sr
         audio = audio.squeeze().astype(np.float64)
-        if audio.ndim == 0 or len(audio) < sr * 0.1:
+        if audio.ndim == 0 or len(audio) < orig_sr * 0.1:
             return np.zeros(max(len(audio), 1), dtype=np.float32)
 
-        if sr != self.sr:
-            audio = librosa.resample(audio, orig_sr=sr, target_sr=self.sr)
+        if orig_sr != self.sr:
+            audio = librosa.resample(audio, orig_sr=orig_sr, target_sr=self.sr)
 
         mx = np.max(np.abs(audio))
         if mx < 1e-8:
@@ -118,8 +119,8 @@ class VoiceConverter:
         if om > 1e-8:
             output = output / om * 0.9
 
-        if sr != self.sr:
-            output = librosa.resample(output, orig_sr=self.sr, target_sr=sr)
+        if orig_sr != self.sr:
+            output = librosa.resample(output, orig_sr=self.sr, target_sr=orig_sr)
 
         output = np.clip(output, -0.95, 0.95)
         return output.astype(np.float32)
