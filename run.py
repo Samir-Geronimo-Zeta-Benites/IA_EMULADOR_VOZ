@@ -65,7 +65,7 @@ def _check_models():
         print("Ejecuta setup.bat primero para descargar los modelos base.")
         return False
 
-    required = ["contentvec_hubert_base.onnx", "hifigan.onnx"]
+    required = ["f0G40k.pth"]
     for model in required:
         if not (models_dir / model).exists():
             print(f"Modelo faltante: {model}")

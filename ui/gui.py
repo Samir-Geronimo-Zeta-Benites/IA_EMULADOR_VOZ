@@ -470,6 +470,7 @@ class VoiceModWindow(QMainWindow):
 
         bottom = QHBoxLayout()
         self.passthrough_cb = QCheckBox("Passthrough (voz original)")
+        self.passthrough_cb.setChecked(bool(self.cfg.get("pipeline", {}).get("passthrough", False)))
         self.passthrough_cb.toggled.connect(self._toggle_passthrough)
         bottom.addWidget(self.passthrough_cb)
         bottom.addStretch()
@@ -627,6 +628,7 @@ class VoiceModWindow(QMainWindow):
 
     def _on_training_done(self, model_path):
         self.model_path = model_path
+        self.cfg["rvc"]["model_path"] = model_path
         self.model_label.setText(os.path.basename(model_path))
         self.start_btn.setEnabled(True)
         self.train_progress.setVisible(False)
@@ -647,6 +649,7 @@ class VoiceModWindow(QMainWindow):
         try:
             from pipeline import RealtimePipeline
             self.pipeline = RealtimePipeline(self.config_path)
+            self.pipeline.passthrough = self.passthrough_cb.isChecked()
             self.pipeline.start()
             self.is_running = True
             self.start_btn.setText("⏹ Detener")
@@ -683,11 +686,16 @@ class VoiceModWindow(QMainWindow):
         self._log("Pipeline detenido")
 
     def _toggle_passthrough(self, enabled):
+        self.cfg.setdefault("pipeline", {})["passthrough"] = bool(enabled)
+        self._save_config()
+        if self.pipeline:
+            self.pipeline.passthrough = bool(enabled)
         self._log(f"Passthrough: {'ON' if enabled else 'OFF'}")
 
     def _update_pitch(self, value):
         self.pitch_label.setText(f"{value}st")
         self.cfg["rvc"]["f0_up_key"] = value
+        self._save_config()
         if self.pipeline and hasattr(self.pipeline, 'converter') and self.pipeline.converter:
             self.pipeline.converter.f0_up_key = value
 

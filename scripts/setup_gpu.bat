@@ -18,7 +18,7 @@ pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
 pip install -r requirements\base.txt
 
 echo [3/3] Descargando modelo base RVC...
-python -c "import urllib.request,os;os.makedirs('models/base',exist_ok=True);urllib.request.urlretrieve('https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main/pretrained_v2/f0G40k.pth','models/base/f0G40k.pth')"
+python scripts\download_models.py
 
 echo.
 echo =========================================

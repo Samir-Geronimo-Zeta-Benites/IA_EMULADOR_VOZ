@@ -12,9 +12,13 @@ class VoiceConverter:
             self.cfg = json.load(f)
 
         self.sr = 40000
-        self.device = torch.device("cpu")
+        use_gpu = self.cfg.get("pipeline", {}).get("use_gpu", False)
+        self.device = torch.device("cuda" if use_gpu and torch.cuda.is_available() else "cpu")
+        self.is_half = self.device.type == "cuda"
+        self.f0_up_key = int(self.cfg.get("rvc", {}).get("f0_up_key", 0))
         self.model = None
         self._hubert = None
+        self._hubert_fe = None
         self._load_model()
 
     def _load_model(self):
@@ -25,11 +29,14 @@ class VoiceConverter:
 
             if model_path.exists():
                 ckpt = torch.load(str(model_path), map_location="cpu")
+                if "model" not in ckpt:
+                    print(f"Modelo incompatible: {model_path} no contiene la clave 'model'")
+                    return
                 sd = ckpt["model"]
             else:
                 base_path = Path("models/base/f0G40k.pth")
                 if not base_path.exists():
-                    print("No model found")
+                    print("No model found. Ejecuta scripts/setup_gpu.bat o scripts/download_models.py")
                     return
                 ckpt = torch.load(str(base_path), map_location="cpu")
                 sd = ckpt["model"]
@@ -46,13 +53,15 @@ class VoiceConverter:
                 upsample_initial_channel=512,
                 upsample_kernel_sizes=[16, 16, 4, 4],
                 spk_embed_dim=109, gin_channels=256,
-                sr=self.sr, is_half=False, phone_dim=768,
+                sr=self.sr, is_half=self.is_half, phone_dim=768,
             )
             self.model.load_state_dict(sd, strict=False)
             self.model.eval().to(self.device)
+            if self.is_half:
+                self.model.half()
             if hasattr(self.model, 'remove_weight_norm'):
                 self.model.remove_weight_norm()
-            print(f"RVC model loaded: {model_path.name}")
+            print(f"RVC model loaded: {model_path.name} on {self.device}")
         except Exception as e:
             print(f"Error loading RVC: {e}")
             self.model = None
@@ -101,9 +110,15 @@ class VoiceConverter:
         f0, t = pw.dio(audio.astype(np.float64), self.sr,
                        f0_floor=50, f0_ceil=1100)
         f0 = pw.stonemask(audio.astype(np.float64), f0, t, self.sr)
+        if self.f0_up_key:
+            f0 = np.where(f0 > 0, f0 * (2.0 ** (self.f0_up_key / 12.0)), 0.0)
+            f0 = np.clip(f0, 0.0, 1100.0)
 
-        f0_raw = torch.from_numpy(f0).float().unsqueeze(0)
-        feats_t = torch.from_numpy(feats).float()
+        f0_raw = torch.from_numpy(f0).float().unsqueeze(0).to(self.device)
+        feats_t = torch.from_numpy(feats).float().to(self.device)
+        if self.is_half:
+            feats_t = feats_t.half()
+            f0_raw = f0_raw.half()
 
         t_feats = feats_t.size(1)
         t_f0 = f0_raw.size(1)
@@ -111,10 +126,10 @@ class VoiceConverter:
         feats_t = feats_t[:, :min_len, :]
         f0_raw = f0_raw[:, :min_len]
 
-        f0_int = torch.clamp((f0_raw / 1100.0 * 256.0).long(), 0, 255)
+        f0_int = torch.clamp((f0_raw.float() / 1100.0 * 256.0).long(), 0, 255)
 
-        lengths = torch.tensor([min_len])
-        spk_id = torch.tensor([0])
+        lengths = torch.tensor([min_len], device=self.device)
+        spk_id = torch.tensor([0], device=self.device)
 
         with torch.no_grad():
             try:
@@ -145,6 +160,8 @@ class VoiceConverter:
             )
             self._hubert = HubertModel.from_pretrained("facebook/hubert-base-ls960")
             self._hubert.eval().to(self.device)
+            if self.is_half:
+                self._hubert.half()
 
         sr16 = 16000
         if len(audio) > 0 and sr16 != self.sr:
@@ -155,8 +172,11 @@ class VoiceConverter:
         audio16 = audio16.astype(np.float32)
         inputs = self._hubert_fe(audio16, sampling_rate=sr16,
                                  return_tensors="pt", padding=True)
+        inputs = inputs.to(self.device)
+        if self.is_half:
+            inputs["input_values"] = inputs["input_values"].half()
         with torch.no_grad():
-            outputs = self._hubert(**inputs.to(self.device))
+            outputs = self._hubert(**inputs)
             feats = outputs.last_hidden_state
         return feats.cpu().numpy()  # (1, T, 768)
 

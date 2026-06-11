@@ -17,6 +17,7 @@ class RealtimePipeline:
         self.converter = VoiceConverter(config_path)
         self.id_in = ac.get("input_device")
         self.id_out = ac.get("output_device")
+        self.passthrough = bool(self.cfg.get("pipeline", {}).get("passthrough", False))
         self._last_input = np.zeros(960, dtype=np.float32)
         self._last_output = np.zeros(960, dtype=np.float32)
         self._accum = np.array([], dtype=np.float32)
@@ -86,7 +87,7 @@ class RealtimePipeline:
     def _process_and_play(self, chunk):
         t0 = time.perf_counter()
         try:
-            processed = self.converter.convert(chunk, self.sr)
+            processed = chunk if self.passthrough else self.converter.convert(chunk, self.sr)
             if processed is None or not np.all(np.isfinite(processed)):
                 return
         except Exception as e:
