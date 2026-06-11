@@ -12,7 +12,7 @@
     "padding_ms": 300
   },
   "rvc": {
-    "model_path": "C:/Users/Developer/OneDrive - OFFICE 365/Escritorio/PROYECTOS_NL/MODELAMIENTO_VOZ/models/trained/audio_jimmy.pth",
+    "model_path": "models/trained/voz_jimmy.pth",
     "f0_method": "parselmouth",
     "f0_up_key": 0,
     "index_rate": 0.75,

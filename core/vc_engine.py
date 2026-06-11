@@ -26,28 +26,18 @@ class VoiceConverter:
 
     def train(self, audio_path: str):
         audio, sr = librosa.load(audio_path, sr=self.sr, mono=True)
-
-        max_len = 60 * self.sr
+        max_len = 90 * self.sr
         if len(audio) > max_len:
-            print(f"  Audio largo ({len(audio)/sr:.0f}s), truncando a 60s")
             audio = audio[:max_len]
-
         audio = (audio / (np.max(np.abs(audio)) + 1e-8)).astype(np.float64)
 
-        print("  Extrayendo F0 (dio)...")
         f0, t = pw.dio(audio, self.sr, f0_floor=50.0, f0_ceil=1100.0)
-        print("  Extrayendo envolvente espectral (cheaptrick)...")
         f0 = pw.stonemask(audio, f0, t, self.sr)
-        sp = pw.cheaptrick(audio, f0, t, self.sr)
-        print("  Extrayendo aperiodicidad (d4c)...")
-        ap = pw.d4c(audio, f0, t, self.sr)
-
         f0_valid = f0[f0 > 0]
+
         stats = {
             "f0_mean": float(np.mean(f0_valid)) if len(f0_valid) > 0 else 150.0,
             "f0_std": float(np.std(f0_valid)) if len(f0_valid) > 0 else 50.0,
-            "sp_mean": np.mean(sp, axis=0).astype(np.float32),
-            "sp_std": np.std(sp, axis=0).astype(np.float32),
             "sr": self.sr,
         }
 
@@ -55,55 +45,57 @@ class VoiceConverter:
         stats_path = model_path.with_suffix(".stats.npy")
         np.save(str(stats_path), stats)
         self.target_stats = stats
-        print(f"Estadisticas guardadas en {stats_path}")
+        print(f"F0 target: mean={stats['f0_mean']:.0f}Hz, std={stats['f0_std']:.0f}Hz")
         return stats
 
     def convert(self, audio: np.ndarray, sr: int = 48000) -> np.ndarray:
         if self.target_stats is None:
             return audio
 
+        audio = audio.squeeze().astype(np.float32)
+        if audio.ndim == 0 or len(audio) < sr * 0.1:
+            return np.zeros(sr, dtype=np.float32)
+
+        orig_sr = sr
         if sr != self.sr:
             audio = librosa.resample(audio, orig_sr=sr, target_sr=self.sr)
-        audio = audio.astype(np.float64)
-        audio = audio / (np.max(np.abs(audio)) + 1e-8)
 
-        f0, t = pw.dio(audio, self.sr, f0_floor=50.0, f0_ceil=1100.0)
-        f0 = pw.stonemask(audio, f0, t, self.sr)
-        sp = pw.cheaptrick(audio, f0, t, self.sr)
-        ap = pw.d4c(audio, f0, t, self.sr)
+        max_val = np.max(np.abs(audio))
+        if max_val < 1e-8:
+            return audio
+        audio_norm = audio / max_val
 
-        f0_src_valid = f0[f0 > 0]
-        if len(f0_src_valid) > 0:
-            src_mean = np.mean(f0_src_valid)
-            src_std = np.std(f0_src_valid) + 1e-8
-            f0_shifted = f0.copy()
-            mask = f0 > 0
-            f0_shifted[mask] = (
-                (f0[mask] - src_mean) / src_std
-                * self.target_stats["f0_std"]
-                + self.target_stats["f0_mean"]
+        f0, _ = pw.dio(audio_norm.astype(np.float64), self.sr,
+                       f0_floor=50.0, f0_ceil=1100.0)
+        f0 = pw.stonemask(audio_norm.astype(np.float64), f0, _, self.sr)
+
+        f0_src = f0[f0 > 0]
+        if len(f0_src) > 3:
+            src_mean = float(np.mean(f0_src))
+            target_mean = self.target_stats["f0_mean"]
+            ratio = target_mean / (src_mean + 1e-3)
+            ratio = max(0.5, min(2.0, ratio))
+
+            semitones = 12.0 * np.log2(ratio) + self.f0_up_key
+            semitones = max(-12.0, min(12.0, semitones))
+
+            audio_norm = audio_norm.astype(np.float64)
+            shifted = librosa.effects.pitch_shift(
+                audio_norm, sr=self.sr, n_steps=semitones,
+                bins_per_octave=24
             )
-            f0 = f0_shifted
+        else:
+            shifted = audio_norm
 
-        sp = sp.astype(np.float32)
-        target_sp_mean = self.target_stats["sp_mean"]
-        sp_src_mean = np.mean(sp, axis=0)
-        sp_shifted = sp - sp_src_mean + target_sp_mean
-        sp_shifted = np.maximum(sp_shifted, 1e-8)
+        shifted = np.nan_to_num(shifted, nan=0.0)
+        out_max = np.max(np.abs(shifted))
+        if out_max > 1e-8:
+            shifted = shifted / out_max * 0.95
 
-        y = pw.synthesize(
-            f0.astype(np.float64),
-            sp_shifted.astype(np.float64),
-            ap.astype(np.float64),
-            self.sr,
-        )
+        if shifted.max() < 1e-6:
+            shifted = audio
 
-        y = np.nan_to_num(y, nan=0.0)
-        max_val = np.max(np.abs(y))
-        if max_val > 0:
-            y = y / max_val * 0.95
+        if orig_sr != self.sr:
+            shifted = librosa.resample(shifted, orig_sr=self.sr, target_sr=orig_sr)
 
-        if sr != self.sr:
-            y = librosa.resample(y, orig_sr=self.sr, target_sr=sr)
-
-        return y.astype(np.float32)
+        return shifted.astype(np.float32)
