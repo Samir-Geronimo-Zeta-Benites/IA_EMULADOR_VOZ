@@ -10,17 +10,27 @@ SR = 40000
 
 def log(msg): print(msg, flush=True)
 
-log("Loading ALL features...")
+log("Loading features (first 15s for memory)...")
 chunks = sorted(FEAT_DIR.glob("feats_*.npy"))
+target_frames = 15 * SR // 400
+loaded = 0
 all_feats, all_f0, all_f0f, all_mel = [], [], [], []
 for chunk in chunks:
     idx = chunk.stem.split("_")[1]
-    all_feats.append(torch.from_numpy(np.load(FEAT_DIR / f"feats_{idx}.npy")).float())
-    all_f0.append(torch.from_numpy(np.load(FEAT_DIR / f"f0_{idx}.npy")).long())
-    all_f0f.append(torch.from_numpy(np.load(FEAT_DIR / f"f0f_{idx}.npy")))
+    f = torch.from_numpy(np.load(FEAT_DIR / f"feats_{idx}.npy")).float()
+    f0i = torch.from_numpy(np.load(FEAT_DIR / f"f0_{idx}.npy")).long()
+    f0fv = torch.from_numpy(np.load(FEAT_DIR / f"f0f_{idx}.npy"))
     m = np.load(FEAT_DIR / f"mel_{idx}.npy")
-    all_mel.append(torch.from_numpy(m).unsqueeze(0).float())
-    log(f"  {chunk.stem}: feats={all_feats[-1].shape} mel={m.shape}")
+    take = min(f.size(1), target_frames - loaded)
+    if take > 0:
+        all_feats.append(f[:, :take, :])
+        all_f0.append(f0i[:take])
+        all_f0f.append(f0fv[:take])
+        all_mel.append(torch.from_numpy(m).unsqueeze(0).float()[:, :, :take])
+        loaded += take
+        log(f"  {chunk.stem}: {take} frames")
+    if loaded >= target_frames:
+        break
 
 feats_all = torch.cat(all_feats, dim=1)
 f0_all = torch.cat(all_f0).unsqueeze(0)
@@ -48,7 +58,7 @@ model.train()
 del ckpt; gc.collect()
 
 log("Training with MEL LOSS (proper voice cloning)...")
-opt = torch.optim.AdamW(model.parameters(), lr=5e-5)
+opt = torch.optim.SGD(model.parameters(), lr=1e-4, momentum=0.9)
 TRAIN_FRAMES = SR // 400 * 2
 
 for ep in range(1, EPOCHS + 1):
