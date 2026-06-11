@@ -4,7 +4,7 @@
     "frame_size": 960,
     "channels": 1,
     "input_device": 1,
-    "output_device": 19
+    "output_device": 12
   },
   "vad": {
     "mode": 1,
