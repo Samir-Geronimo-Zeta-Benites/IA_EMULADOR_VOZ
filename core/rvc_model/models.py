@@ -560,8 +560,11 @@ class SynthesizerTrnMs256NSF(nn.Module):
         m_p, logs_p, x_mask = self.enc_p(phone, pitch, phone_lengths)
         z, m_q, logs_q, y_mask = self.enc_q(y, y_lengths, g=None)
         z_p = self.flow(z, y_mask, g=None)
+        seg_sz = min(z.size(2), self.segment_size // 4)
+        if seg_sz < 1: seg_sz = z.size(2)
+        z_lengths = torch.full_like(y_lengths, z.size(2))
         z_slice, ids_slice = commons.rand_slice_segments(
-            z, y_lengths, self.segment_size
+            z, z_lengths, seg_sz
         )
         pitchf = commons.slice_segments2(
             pitchf, ids_slice, self.segment_size
