@@ -665,7 +665,10 @@ class VoiceModWindow(QMainWindow):
     def _stop_pipeline(self):
         if self.pipeline:
             self.pipeline.stop()
+            if hasattr(self.pipeline, 'rvc'):
+                self.pipeline.rvc.cleanup()
             self.pipeline = None
+        import gc; gc.collect()
         self.is_running = False
         self.start_btn.setText("▶ Iniciar")
         self.start_btn.setProperty("class", "")

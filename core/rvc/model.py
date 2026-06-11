@@ -1,4 +1,5 @@
 import json
+import gc
 import numpy as np
 import torch
 import torch.nn as nn
@@ -6,7 +7,7 @@ from pathlib import Path
 
 
 class ContentEncoder(nn.Module):
-    def __init__(self, in_dim: int = 768, hidden_dim: int = 256):
+    def __init__(self, in_dim: int = 768, hidden_dim: int = 128):
         super().__init__()
         self.proj = nn.Linear(in_dim, hidden_dim)
         self.norm = nn.LayerNorm(hidden_dim)
@@ -58,6 +59,8 @@ class RVCInference:
         self.device = torch.device("cpu")
 
         self.generator = None
+        self._hubert = None
+        self._pitch = None
         self._load_models()
 
     def _load_models(self):
@@ -77,16 +80,26 @@ class RVCInference:
                 self.generator = None
         else:
             print(f"Modelo no encontrado: {model_path}")
-            print("Usa el pipeline de entrenamiento primero.")
+
+    def _get_hubert(self):
+        if self._hubert is None:
+            from core.extractors import HubertExtractor
+            self._hubert = HubertExtractor()
+            self._hubert._load()
+        return self._hubert
+
+    def _get_pitch(self):
+        if self._pitch is None:
+            from core.extractors import PitchExtractor
+            self._pitch = PitchExtractor()
+        return self._pitch
 
     def infer(self, audio: np.ndarray, sr: int = 48000) -> np.ndarray:
         if self.generator is None:
             return audio
 
-        from core.extractors import HubertExtractor, PitchExtractor
-
-        hubert = HubertExtractor()
-        pitch = PitchExtractor()
+        hubert = self._get_hubert()
+        pitch = self._get_pitch()
 
         feats = hubert.extract(audio, sr)
         f0 = pitch.extract(audio, sr)
@@ -103,9 +116,12 @@ class RVCInference:
         with torch.no_grad():
             mel = self.generator(feats_t, f0_t)
 
+        del feats_t, f0_t
+
         from core.vocoder import Vocoder
         vocoder = Vocoder()
         mel_np = mel.cpu().numpy()
+        del mel
         mel_np = np.nan_to_num(mel_np, nan=0.0, posinf=1.0, neginf=-1.0)
         mel_np = np.clip(mel_np, -5.0, 5.0)
         output = vocoder.decode(mel_np)
@@ -114,15 +130,10 @@ class RVCInference:
             output = audio
         return output
 
-    def extract_features(self, audio, sr):
-        from core.extractors import HubertExtractor
-        hubert = HubertExtractor()
-        return hubert.extract(audio, sr)
-
     def set_f0_shift(self, semitones: int):
         self.f0_up_key = semitones
 
-    def set_device(self, use_gpu: bool):
-        self.device = torch.device("cuda" if use_gpu else "cpu")
-        if self.generator is not None:
-            self.generator.to(self.device)
+    def cleanup(self):
+        self._hubert = None
+        self._pitch = None
+        gc.collect()

@@ -1,6 +1,7 @@
 import json
 import threading
 import time
+import gc
 import numpy as np
 from queue import Queue, Empty
 
@@ -16,12 +17,11 @@ class RealtimePipeline:
 
         self.running = False
         self.threads = []
-        self.input_queue = Queue(maxsize=20)
-        self.output_queue = Queue(maxsize=20)
+        self.input_queue = Queue(maxsize=10)
+        self.output_queue = Queue(maxsize=10)
         self.processing_times = []
 
         audio_cfg = self.cfg["audio"]
-
         self.sr = audio_cfg["sample_rate"]
         self.frame_size = audio_cfg["frame_size"]
 
@@ -47,11 +47,11 @@ class RealtimePipeline:
     def start(self):
         self.running = True
 
-        capture_thread = threading.Thread(target=self._capture_loop, daemon=True)
-        process_thread = threading.Thread(target=self._process_loop, daemon=True)
-        playback_thread = threading.Thread(target=self._playback_loop, daemon=True)
-
-        self.threads = [capture_thread, process_thread, playback_thread]
+        self.threads = [
+            threading.Thread(target=self._capture_loop, daemon=True),
+            threading.Thread(target=self._process_loop, daemon=True),
+            threading.Thread(target=self._playback_loop, daemon=True),
+        ]
 
         for t in self.threads:
             t.start()
@@ -60,10 +60,20 @@ class RealtimePipeline:
 
     def stop(self):
         self.running = False
-        self.input_queue.put(None)
-        self.output_queue.put(None)
+
+        for q in [self.input_queue, self.output_queue]:
+            try:
+                while True:
+                    q.get_nowait()
+            except Empty:
+                pass
+            q.put(None)
+
         for t in self.threads:
-            t.join(timeout=2.0)
+            t.join(timeout=1.5)
+
+        self.threads.clear()
+        gc.collect()
         print("Pipeline detenido")
 
     def _capture_loop(self):
@@ -75,19 +85,22 @@ class RealtimePipeline:
 
         def callback(indata, frames, time_info, status):
             if self.running:
-                self.input_queue.put(indata.copy())
+                try:
+                    self.input_queue.put_nowait(indata.copy())
+                except:
+                    pass
 
         capture.start(callback)
 
         while self.running:
-            time.sleep(0.01)
+            time.sleep(0.05)
 
         capture.stop()
 
     def _process_loop(self):
         while self.running:
             try:
-                frame = self.input_queue.get(timeout=0.1)
+                frame = self.input_queue.get(timeout=0.05)
             except Empty:
                 continue
 
@@ -106,8 +119,11 @@ class RealtimePipeline:
             chunk = self._process_chunk(frame)
 
             if chunk is not None and len(chunk) > 0:
-                self.output_queue.put(chunk)
-                self._last_output = chunk[-960:]
+                try:
+                    self.output_queue.put_nowait(chunk)
+                    self._last_output = chunk[-960:]
+                except:
+                    pass
 
     def _process_chunk(self, frame: np.ndarray) -> np.ndarray:
         t0 = time.perf_counter()
@@ -120,14 +136,13 @@ class RealtimePipeline:
             processed = self.rvc.infer(frame, self.sr)
             if not np.all(np.isfinite(processed)):
                 processed = frame
-        except Exception as e:
+        except Exception:
             processed = frame
 
         processed = self._normalize(processed)
 
-        elapsed = time.perf_counter() - t0
-        self.processing_times.append(elapsed)
-        if len(self.processing_times) > 100:
+        self.processing_times.append(time.perf_counter() - t0)
+        if len(self.processing_times) > 50:
             self.processing_times.pop(0)
 
         return processed
@@ -153,7 +168,7 @@ class RealtimePipeline:
         playback.start(callback)
 
         while self.running:
-            time.sleep(0.01)
+            time.sleep(0.05)
 
         playback.stop()
 
@@ -166,4 +181,4 @@ class RealtimePipeline:
     def get_latency_ms(self) -> float:
         if not self.processing_times:
             return 0.0
-        return float(np.mean(self.processing_times[-50:]) * 1000)
+        return float(np.mean(self.processing_times[-30:]) * 1000)

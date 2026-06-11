@@ -1,28 +1,34 @@
 import numpy as np
 import torch
+import gc
 
 
 class HubertExtractor:
     def __init__(self, model_name: str = "facebook/hubert-base-ls960"):
+        self.model_name = model_name
         self.device = torch.device("cpu")
-        self.model = None
         self.sample_rate = 16000
+        self._model = None
+        self._feature_extractor = None
+
+    def _load(self):
+        if self._model is not None:
+            return
         try:
             from transformers import HubertModel, Wav2Vec2FeatureExtractor
-
-            self.feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(
-                model_name
+            self._feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(
+                self.model_name
             )
-            self.model = HubertModel.from_pretrained(model_name)
-            self.model.eval()
-            self.model.to(self.device)
-            print(f"HuBERT cargado: {model_name}")
+            self._model = HubertModel.from_pretrained(self.model_name)
+            self._model.eval()
+            self._model.to(self.device)
+            print(f"HuBERT cargado: {self.model_name}")
         except Exception as e:
             print(f"Error cargando HuBERT: {e}")
-            self.feature_extractor = None
 
     def extract(self, audio: np.ndarray, sr: int = 16000) -> np.ndarray:
-        if self.model is None or self.feature_extractor is None:
+        self._load()
+        if self._model is None or self._feature_extractor is None:
             return np.zeros((1, 768, max(1, len(audio) // 320)), dtype=np.float32)
 
         if sr != self.sample_rate:
@@ -32,18 +38,21 @@ class HubertExtractor:
         if audio.ndim > 1:
             audio = audio.squeeze()
 
-        inputs = self.feature_extractor(
-            audio,
-            sampling_rate=self.sample_rate,
-            return_tensors="pt",
-            padding=True,
+        inputs = self._feature_extractor(
+            audio, sampling_rate=self.sample_rate, return_tensors="pt", padding=True
         )
 
         with torch.no_grad():
-            outputs = self.model(**inputs.to(self.device))
+            outputs = self._model(**inputs.to(self.device))
             features = outputs.last_hidden_state
 
-        return features.cpu().numpy().transpose(0, 2, 1)
+        result = features.cpu().numpy().transpose(0, 2, 1)
+        return result
+
+    def unload(self):
+        self._model = None
+        self._feature_extractor = None
+        gc.collect()
 
     def _resample(self, audio: np.ndarray, orig_sr: int, target_sr: int):
         if orig_sr == target_sr:
