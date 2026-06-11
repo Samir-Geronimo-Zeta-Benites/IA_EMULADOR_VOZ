@@ -12,7 +12,7 @@
     "padding_ms": 300
   },
   "rvc": {
-    "model_path": "models/trained/voz_jimmy.pth",
+    "model_path": "models\\trained\\audio_jimmy.pth",
     "f0_method": "parselmouth",
     "f0_up_key": 0,
     "index_rate": 0.75,

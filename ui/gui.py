@@ -617,8 +617,6 @@ class VoiceModWindow(QMainWindow):
             from train import Trainer
             trainer = Trainer(self.config_path)
             p = trainer.run_pipeline(self._training_path)
-            from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.information(self, "Entrenamiento", f"Modelo guardado:\n{p}")
             self._on_training_done(p)
         except Exception as e:
             tb = traceback.format_exc()

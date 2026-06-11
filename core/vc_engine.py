@@ -26,11 +26,20 @@ class VoiceConverter:
 
     def train(self, audio_path: str):
         audio, sr = librosa.load(audio_path, sr=self.sr, mono=True)
+
+        max_len = 60 * self.sr
+        if len(audio) > max_len:
+            print(f"  Audio largo ({len(audio)/sr:.0f}s), truncando a 60s")
+            audio = audio[:max_len]
+
         audio = (audio / (np.max(np.abs(audio)) + 1e-8)).astype(np.float64)
 
+        print("  Extrayendo F0 (dio)...")
         f0, t = pw.dio(audio, self.sr, f0_floor=50.0, f0_ceil=1100.0)
+        print("  Extrayendo envolvente espectral (cheaptrick)...")
         f0 = pw.stonemask(audio, f0, t, self.sr)
         sp = pw.cheaptrick(audio, f0, t, self.sr)
+        print("  Extrayendo aperiodicidad (d4c)...")
         ap = pw.d4c(audio, f0, t, self.sr)
 
         f0_valid = f0[f0 > 0]
