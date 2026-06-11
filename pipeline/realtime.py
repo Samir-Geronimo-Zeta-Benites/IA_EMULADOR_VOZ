@@ -43,6 +43,8 @@ class RealtimePipeline:
         self.output_device = audio_cfg.get("output_device")
         self._last_input = np.array([], dtype=np.float32)
         self._last_output = np.array([], dtype=np.float32)
+        self._process_buffer = np.array([], dtype=np.float32)
+        self._buffer_min = int(self.sr * 0.5)
 
     def start(self):
         self.running = True
@@ -73,6 +75,7 @@ class RealtimePipeline:
             t.join(timeout=1.5)
 
         self.threads.clear()
+        self._process_buffer = np.array([], dtype=np.float32)
         gc.collect()
         print("Pipeline detenido")
 
@@ -116,7 +119,12 @@ class RealtimePipeline:
             if not is_active and self.vad_buffer.silence_counter > 0:
                 continue
 
-            chunk = self._process_chunk(frame)
+            self._process_buffer = np.concatenate([self._process_buffer, frame.squeeze()])
+            if len(self._process_buffer) < self._buffer_min:
+                continue
+
+            chunk = self._process_chunk(self._process_buffer.copy())
+            self._process_buffer = np.array([], dtype=np.float32)
 
             if chunk is not None and len(chunk) > 0:
                 try:
