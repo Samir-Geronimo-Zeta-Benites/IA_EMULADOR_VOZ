@@ -14,3 +14,6 @@ voces_audios_crudos/
 *.pth
 .DS_Store
 _*.wav
+RVC_WebUI/
+RVC1006Intel.7z
+models/base/f0G40k.pth
